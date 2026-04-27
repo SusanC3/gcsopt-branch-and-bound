@@ -72,7 +72,7 @@ plt.ylim([-.5, side-.5])
 plt.savefig("demo_tsp.pdf", bbox_inches="tight")
 plt.show()
 
-# Solve traveling salesman.
+# Solve minimum spanning tree.
 graph.solve_minimum_spanning_tree()
 print("Problem status:", graph.status)
 print("Optimal value:", graph.value)

@@ -15,7 +15,7 @@ for i in range(l):
         x = v.add_variable(2) # Continuous variable.
         v.add_constraint(cvxpy.norm2(x - c) <= r) # Constrain in circle.
 
-# Add edges to graph.
+# Add edges to graph. 
 for i in range(l):
     for j in range(l):
         cv = (i, j) # Name of vertex v.

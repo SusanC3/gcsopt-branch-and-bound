@@ -1,6 +1,7 @@
 import cvxpy as cp
 import numpy as np
 from gcsopt import GraphOfConvexSets
+from gcsopt.gurobipy.graph_problems.shortest_path import shortest_path
 
 # Initialize empty graph.
 graph = GraphOfConvexSets()
@@ -67,14 +68,32 @@ if __name__ == "__main__":
     print("Problem status:", graph.status)
     print("Optimal value:", graph.value)
 
-    # Show graph using graphviz (requires graphviz).
-    dot = graph.graphviz()
-    dot.view()
+    from gcsopt.branch_bound import shortest_path
+    shortest_path(graph, s, t)
+    print("Problem status:", graph.status)
+    print("Optimal value:", graph.value)
 
-    # Plot optimal solution (requires matplotlib).
-    import matplotlib.pyplot as plt
-    plt.figure()
-    plt.axis("equal")
-    graph.plot_2d()
-    graph.plot_2d_solution()
-    plt.show()
+    # #guorbipy
+    # shortest_path(graph, s, t, save_bounds=True, gurobi_parameters={'OutputFlag': 1})
+
+    # # after this can get bounds with
+    # callback_times, lower_bounds, upper_bounds = graph.solver_stats.callback_bounds
+
+    # from bound_plots import plot_bounds
+    # plot_bounds(graph.solver_stats.callback_bounds, "shortest_path_bounds")
+
+    # gurobi has default heruistics i can overwrite
+
+    # which variable to fix, which subproblem (0/1) to expand first
+
+    # Show graph using graphviz (requires graphviz).
+    # dot = graph.graphviz()
+    # dot.view()
+
+    # # Plot optimal solution (requires matplotlib).
+    # import matplotlib.pyplot as plt
+    # plt.figure()
+    # plt.axis("equal")
+    # graph.plot_2d()
+    # graph.plot_2d_solution()
+    # plt.show()

@@ -4,9 +4,11 @@ import matplotlib.pyplot as plt
 from maze_utils import Maze
 from gcsopt import GraphOfConvexSets
 
+from gcsopt.branch_bound import shortest_path
+
 # Create maze.
-maze_side = 10
-knock_downs = 10
+maze_side = 4
+knock_downs = 1
 random_seed = 0
 maze = Maze(maze_side, maze_side, random_seed)
 maze.knock_down_walls(knock_downs)
@@ -68,6 +70,12 @@ if __name__ == "__main__":
     graph.solve_shortest_path(source, target)
     print("Problem status:", graph.status)
     print("Optimal value:", graph.value)
+
+    # from gcsopt.gurobipy.graph_problems.shortest_path import shortest_path
+    # shortest_path(graph, source, target, save_bounds=True, gurobi_parameters={'OutputFlag': 1})
+
+    from gcsopt.branch_bound import shortest_path
+    shortest_path(graph, source, target)
 
     # Plot optimal trajectory.
     plt.figure()

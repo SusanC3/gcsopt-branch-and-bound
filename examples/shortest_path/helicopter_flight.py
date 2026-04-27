@@ -75,10 +75,15 @@ target = graph.vertices[goal]
 if has_gurobi():
     from gcsopt.gurobipy.graph_problems.shortest_path import shortest_path
     params = {"OutputFlag": 0, "PreMIQCPForm": 1}
-    save_bounds = False
+    save_bounds = True
     shortest_path(graph, source, target, gurobi_parameters=params, save_bounds=save_bounds)
     if save_bounds:
         np.save("flight_bounds.npy", graph.solver_stats.callback_bounds)
+
+    # plot the bounds
+    from bound_plots import plot_bounds
+    plot_bounds(graph.solver_stats.callback_bounds, "helicopter_flight_bounds")
+
 else:
     graph.solve_shortest_path(source, target)
 print("Problem status:", graph.status)
