@@ -2,6 +2,7 @@ import numpy as np
 import heapq
 import cvxpy as cp
 import copy
+from functools import partial
 
 import graphviz as gv
 
@@ -10,15 +11,6 @@ from gcsopt.graph_problems.shortest_path import bb_node_shortest_path
 from gcsopt.graph_problems.utils import (define_variables,
     enforce_edge_programs, set_solution)
 
-'''
-logging:
-node: 
-- value of variables at each node after solving relaxation + fixed variables
-- order of visitation
-- upper bound after node solved
-2. branches: line with (var = val) along the line to new node
-
-'''
 
 DEBUG = 1
 iter = 0
@@ -28,16 +20,10 @@ def makedot(root):
    
     dot = gv.Digraph()
 
-    # traverse graph from root
-    visited = []
     q = [root]
-
-    # import pdb
-    # pdb.set_trace()
-
     while len(q) > 0:
         n = heapq.heappop(q)
-        label = "ORD: " + str(n.order) + "\nUB: " + str(n.upper_bound)[:7] + "\nYV_FIXED: " + str(len(n.yv_fixed)) + "\nYE_FIXED: " +  str(len(n.ye_fixed))
+        label = "ORD: " + str(n.order) + "\nP: " + str(n.priority) + "\nUB: " + str(n.upper_bound) + "\nYV_FIXED: " + str(len(n.yv_fixed)) + "\nYE_FIXED: " +  str(len(n.ye_fixed))
         dot.node(str(n.order), label=label)
 
         for c in n.children:
@@ -49,37 +35,177 @@ def makedot(root):
 
 
 class Node:
-    def __init__(self):
-        self.value = None
-        self.yv = []
-        self.yv_fixed = {}
-        self.ye = []
-        self.ye_fixed = {}
+    def __init__(self, val=None, yv=[], ye=[], yv_fixed={}, ye_fixed={}, infeasible=False):
+        self.value = val
+        self.yv = copy.deepcopy(yv)
+        self.yv_fixed = copy.deepcopy(yv_fixed)
+        self.ye = copy.deepcopy(ye)
+        self.ye_fixed = copy.deepcopy(ye_fixed)
+        self.infeasible = infeasible
 
         self.children = []
 
         # for logging/debugging
         self.order = -1
+        self.priority = -1
         self.upper_bound = -1
         self.branch_info = ""
-    
-    def __init__(self, val, yv, ye):
-        self.yv_fixed = {}
-        self.ye_fixed = {}
-        self.children = []
-        self.set_solution(val, yv, ye)
 
-    def set_solution(self, val, yv, ye):
+
+    def set_solution(self, val, yv, ye, infeasible):
         self.value = val
-        self.yv = yv
-        self.ye = ye
+        self.yv = copy.deepcopy(yv)
+        self.ye = copy.deepcopy(ye)
+        self.infeasible = infeasible
 
-    def __lt__(self, other): return self #TODO with proper priority this should never be used
+    def __lt__(self, other): return self 
+
+
+# Utils
+def make_child(n):
+    return Node(val=n.value, yv_fixed=copy.deepcopy(n.yv_fixed), ye_fixed=copy.deepcopy(n.ye_fixed))
+
+def solve_relaxation(n, conic_graph, conic_source, conic_target):
+    bb_node_shortest_path(conic_graph, conic_source, conic_target, n.yv_fixed, n.ye_fixed)
+    n.set_solution(conic_graph.value, 
+                    [v.binary_variable for v in conic_graph.vertices], 
+                    [e.binary_variable for e in conic_graph.edges],
+                    conic_graph.status == cp.INFEASIBLE)
+
+
+
+'''
+Different node priority options
+'''
+def p_obj(n, conic_graph, conic_source, conic_target): # priority is n's objective value
+    solve_relaxation(n, conic_graph, conic_source, conic_target)
+    return n.value
+
+def p_est(n, conic_graph, conic_source, conic_target): # priority is estimated based on rounded LP 
+    temp = Node()
+    for i, v in enumerate(n.yv):
+        temp.yv_fixed[i] = round(v.value)
+    for i, e in enumerate(n.ye):
+        temp.ye_fixed[i] = round(e.value)
+
+    solve_relaxation(temp, conic_graph, conic_source, conic_target) # replace with pseudocost for efficiency
+    return temp.value
+
+
+'''
+Different branching options
+returns list of children
+'''
+# branch on variables closest to value
+def b_value(n, value, num_children=2):
+    iv, best_v = -1, np.inf
+    for i, v in enumerate(n.yv):
+        if v.value is not None and abs(v.value-value) <= best_v:
+            iv = i
+            best_v = abs(v.value-value)
+
+    ie, best_e = -1, np.inf
+    for i, e in enumerate(n.ye):
+        if e.value is not None and abs(e.value-value) <= best_e:
+            ie = i
+            best_e = abs(e.value-value)
+
+    if (iv == -1 and ie == -1): return []
+    
+    children = []
+    for i in range(num_children):
+        children.append(make_child(n))
+
+    #TODO how does this work with more than 2 children? aren't the only options 1/0?
+    if best_v < best_e:
+        children[0].branch_info = "yv[" + str(iv) + "]: " + str(n.yv[iv].value)[:7] + " --> 0"
+        children[1].branch_info = "yv[" + str(iv) + "]: " + str(n.yv[iv].value)[:7] + " --> 1"
+        print("best vertex", iv, "is this close to 0.5:", best_v)
+
+        children[0].yv_fixed[iv] = 0
+        children[1].yv_fixed[iv] = 1
+    else:
+        children[0].branch_info = "ye[" + str(ie) + "]: " + str(n.ye[ie].value)[:7] + " --> 0"
+        children[1].branch_info = "ye[" + str(ie) + "]: " + str(n.ye[ie].value)[:7] + " --> 1"
+        print("best edge", ie, "is this close to 0.5:", best_e)
+        
+        children[0].ye_fixed[ie] = 0
+        children[1].ye_fixed[ie] = 1
+    
+    return children
+
+# strong branching
+def b_strong(n, conic_graph, conic_source, conic_target):
+    iv, best_v = -1, 0
+    for i, v in enumerate(n.yv):
+        if i in n.yv_fixed: continue # don't fix again
+        # evaluate potential children
+        c0 = make_child(n)
+        c0.yv_fixed[i] = 0
+        solve_relaxation(c0, conic_graph, conic_source, conic_target)
+        if conic_graph.status == cp.INFEASIBLE: continue
+
+        c1 = make_child(n)
+        c1.yv_fixed[i] = 1
+        solve_relaxation(c1, conic_graph, conic_source, conic_target)
+        if conic_graph.status == cp.INFEASIBLE: continue
+
+        if (n.value - c0.value)*(n.value - c1.value) > best_v:
+            iv = i
+            best_v = (n.value - c0.value)*(n.value - c1.value)
+
+    ie, best_e = -1, 0
+    for i, e in enumerate(n.ye):
+        if i in n.ye_fixed: continue # don't fix again
+        # evaluate potential children
+        c0 = make_child(n)
+        c0.ye_fixed[i] = 0
+        solve_relaxation(c0, conic_graph, conic_source, conic_target)
+        if conic_graph.status == cp.INFEASIBLE: continue # do not pick this child
+
+        c1 = make_child(n)
+        c1.ye_fixed[i] = 1
+        solve_relaxation(c1, conic_graph, conic_source, conic_target)
+        if conic_graph.status == cp.INFEASIBLE: continue
+
+        if (n.value - c0.value)*(n.value - c1.value) > best_e:
+            ie = i
+            best_e = (n.value - c0.value)*(n.value - c1.value)
+
+    if (iv == -1 and ie == -1): 
+        return []
+    
+    children = []
+    children.append(make_child(n))
+    children.append(make_child(n))
+
+    #TODO how does this work with more than 2 children? aren't the only options 1/0?
+    if best_v > best_e:
+        children[0].branch_info = "yv[" + str(iv) + "]: " + str(n.yv[iv].value)[:7] + " --> 0"
+        children[1].branch_info = "yv[" + str(iv) + "]: " + str(n.yv[iv].value)[:7] + " --> 1"
+        print("best vertex", iv, "has this product:", best_v)
+
+        children[0].yv_fixed[iv] = 0
+        children[1].yv_fixed[iv] = 1
+    else:
+        children[0].branch_info = "ye[" + str(ie) + "]: " + str(n.ye[ie].value)[:7] + " --> 0"
+        children[1].branch_info = "ye[" + str(ie) + "]: " + str(n.ye[ie].value)[:7] + " --> 1"
+        print("best edge", ie, "has this product:", best_e)
+        
+        children[0].ye_fixed[ie] = 0
+        children[1].ye_fixed[ie] = 1
+    
+    return children
+
+
+calc_priority = p_est
+branch_children = b_strong # partial(b_value, value=0.5)
 
 
 def shortest_path_conic(conic_graph, conic_source, conic_target, tol=1e-4):
     global DEBUG
     global iter
+    global calc_priority # node with highest priority will be selected at each iteration
 
     upper_bound = np.inf 
     lower_bound = -np.inf 
@@ -91,102 +217,61 @@ def shortest_path_conic(conic_graph, conic_source, conic_target, tol=1e-4):
 
     #0. Initialize: create initial node with no fixed variables
     bb_node_shortest_path(conic_graph, conic_source, conic_target, {}, {})
-    heapq.heappush(leaf_nodes, 
-                   (conic_graph.value, Node(conic_graph.value, # TODO different priority strategies
-                        [v.binary_variable for v in conic_graph.vertices], 
-                        [e.binary_variable for e in conic_graph.edges])))
+    root = Node(val=conic_graph.value,
+            yv=[v.binary_variable for v in conic_graph.vertices], 
+            ye=[e.binary_variable for e in conic_graph.edges],
+            infeasible=conic_graph.status == cp.INFEASIBLE)
+
+    heapq.heappush(leaf_nodes, (-calc_priority(root, conic_graph, conic_source, conic_target), root))
 
     while (True):
         iter+=1
         print("upper_bound =", upper_bound)
         print("queue length:", len(leaf_nodes))
+        
         #1. Termination check: if leaf_nodes is empty 
         if (len(leaf_nodes) == 0):
             if DEBUG: makedot(root).render('BB_trace')
-            return #solution already set, anything else needs to be done?
+            return 
 
         #2. Choose next node, pop it from leaf_nodes
         priority, n = heapq.heappop(leaf_nodes)
-        if root is None: root = n
         n.order = iter
         n.upper_bound = upper_bound
-       # print("priority/value:", priority)
+        n.priority = priority
+        print("priority:", priority)
+
+        print(f"Node has {len(n.yv_fixed)} fixed vertices, {len(n.ye_fixed)} fixed edges")
+        print(f"Fixed edges: {n.ye_fixed}")
 
         #3. solve the LP at this node, conditioned on fixed variables. 
             # unbounded --> stop, OG is unbounded
-        bb_node_shortest_path(conic_graph, conic_source, conic_target, n.yv_fixed, n.ye_fixed)
-        if (conic_graph.status == cp.UNBOUNDED):
-            print("Problem is unbounded!")
-            return
-        
-       # print("num vars:", len(n.yv) + len(n.ye))
-
-        n.set_solution(conic_graph.value, # TODO give nodes custom priority
-                        [v.binary_variable for v in conic_graph.vertices], 
-                        [e.binary_variable for e in conic_graph.edges])
-        
+        if len(n.yv) == 0: # otherwise LP was already solved as part of node selection or branching
+            solve_relaxation(n, conic_graph, conic_source, conic_target)
+            
         yv_values = [v.value for v in n.yv]
         ye_values = [e.value for e in n.ye]
 
         #4. Prune (GOTO Step 1) IF:
             # LP is infeasible
-        if (conic_graph.status == cp.INFEASIBLE): continue
+        if (n.infeasible): continue
             # upper bound <= objective val
-        if (upper_bound <= n.value): continue
+        if (upper_bound <= n.value):
+            continue
             # if all vars are integers and val <= upper bound, update & prune Nodes whose val >= UB
         if (np.allclose(np.array(yv_values), np.rint(np.array(yv_values)), atol=tol) 
                 and np.allclose(np.array(ye_values), np.rint(np.array(ye_values)), atol=tol)):
             upper_bound = n.value
-            leaf_nodes = [leaf for leaf in leaf_nodes if not (leaf[1].value >= upper_bound)]
+            leaf_nodes = [leaf for leaf in leaf_nodes if not (leaf[1].value is not None and leaf[1].value >= upper_bound)]
             n.upper_bound = upper_bound
             continue
         
 
         #6. Branch. decrease feasible region by fixing >=1 addtl. variables, add >=1 new nodes
-        #TODO allow multiple strategies. for now it picks closest to 0.5
-        iv, best_v = -1, np.inf
-        for i, v in enumerate(n.yv):
-            if v.value is not None and abs(v.value-0.5) <= best_v:
-                iv = i
-                best_v = abs(v.value-0.5)
+        n.children = branch_children(n, conic_graph, conic_source, conic_target)
+        for child in n.children:
+            heapq.heappush(leaf_nodes, (-calc_priority(child, conic_graph, conic_source, conic_target), child))
 
-        ie, best_e = -1, np.inf
-        for i, e in enumerate(n.ye):
-            if e.value is not None and abs(e.value-0.5) <= best_e:
-                ie = i
-                best_e = abs(e.value-0.5)
-
-        #TODO allow variable number of children
-        child0 = copy.deepcopy(n)
-        child1 = copy.deepcopy(n)
-        child0.order = -1
-        child1.order = -1
-
-        # import pdb
-        # pdb.set_trace()
-
-        if best_v < best_e:
-            child0.branch_info = "yv[" + str(iv) + "]: " + str(child0.yv[iv].value)[:7] + " --> 0"
-            child1.branch_info = "yv[" + str(iv) + "]: " + str(child1.yv[iv].value)[:7] + " --> 1"
-            print("best vertex", iv, "is this close to 0.5:", best_v)
-
-            child0.yv_fixed[iv] = 0
-            child1.yv_fixed[iv] = 1
-            
-            
-        else:
-            child0.branch_info = "ye[" + str(ie) + "]: " + str(child0.ye[ie].value)[:7] + " --> 0"
-            child1.branch_info = "ye[" + str(ie) + "]: " + str(child1.ye[ie].value)[:7] + " --> 1"
-            print("best edge", ie, "is this close to 0.5:", best_e)
-            
-            child0.ye_fixed[ie] = 0
-            child1.ye_fixed[ie] = 1
-
-        #TODO could do different priority
-        n.children = [child0, child1]
-        heapq.heappush(leaf_nodes, (priority, child0))
-        heapq.heappush(leaf_nodes, (priority, child1))
-    
         print()
     
 
@@ -197,3 +282,4 @@ def shortest_path(graph, source, target):
     conic_target = conic_graph.get_vertex(target.name)
     shortest_path_conic(conic_graph, conic_source, conic_target)
     graph._set_solution(conic_graph)
+
