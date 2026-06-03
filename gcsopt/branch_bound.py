@@ -79,7 +79,7 @@ Different node priority options
 '''
 def p_obj(n, conic_graph, conic_source, conic_target): # priority is n's objective value
     solve_relaxation(n, conic_graph, conic_source, conic_target)
-    return n.value
+    return -n.value # want to explore most promising (lowest objective value)
 
 def p_est(n, conic_graph, conic_source, conic_target): # priority is estimated based on rounded LP 
     temp = Node()
@@ -97,7 +97,7 @@ Different branching options
 returns list of children
 '''
 # branch on variables closest to value
-def b_value(n, value, num_children=2):
+def b_value(n, value, num_children=2, **kwargs):
     iv, best_v = -1, np.inf
     for i, v in enumerate(n.yv):
         if v.value is not None and abs(v.value-value) <= best_v:
@@ -199,7 +199,7 @@ def b_strong(n, conic_graph, conic_source, conic_target):
 
 
 calc_priority = p_est
-branch_children = b_strong # partial(b_value, value=0.5)
+branch_children = partial(b_value, value=0.5)
 
 
 def shortest_path_conic(conic_graph, conic_source, conic_target, tol=1e-4):
@@ -268,7 +268,7 @@ def shortest_path_conic(conic_graph, conic_source, conic_target, tol=1e-4):
         
 
         #6. Branch. decrease feasible region by fixing >=1 addtl. variables, add >=1 new nodes
-        n.children = branch_children(n, conic_graph, conic_source, conic_target)
+        n.children = branch_children(n) #, conic_graph, conic_source, conic_target)
         for child in n.children:
             heapq.heappush(leaf_nodes, (-calc_priority(child, conic_graph, conic_source, conic_target), child))
 

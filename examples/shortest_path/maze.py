@@ -1,17 +1,18 @@
 import numpy as np
 import cvxpy as cp
 import matplotlib.pyplot as plt
-from maze_utils import Maze
+from maze_utils import Maze, make_gap_maze
 from gcsopt import GraphOfConvexSets
 
 from gcsopt.branch_bound import shortest_path
 
 # Create maze.
-maze_side = 4
-knock_downs = 1
-random_seed = 0
-maze = Maze(maze_side, maze_side, random_seed)
-maze.knock_down_walls(knock_downs)
+maze_side = 7
+knock_downs = 10
+random_seed = 1
+# maze = Maze(maze_side, maze_side, random_seed)
+# maze.knock_down_walls(knock_downs)
+maze = make_gap_maze(maze_side, maze_side) 
 
 # Start and goal points.
 start = np.array([0.5, 0])
@@ -66,21 +67,63 @@ target = graph.get_vertex((maze_side - 1, maze_side - 1))
 # imported by other files.
 if __name__ == "__main__":
 
+    plt.figure()
+    maze.plot()
+    plt.show()
+
     # Solve problem.
-    graph.solve_shortest_path(source, target)
+    graph.solve_shortest_path(source, target, binary=False)
     print("Problem status:", graph.status)
     print("Optimal value:", graph.value)
 
-    # from gcsopt.gurobipy.graph_problems.shortest_path import shortest_path
-    # shortest_path(graph, source, target, save_bounds=True, gurobi_parameters={'OutputFlag': 1})
 
-    from gcsopt.branch_bound import shortest_path
-    shortest_path(graph, source, target)
+    # from gcsopt.branch_bound import shortest_path
+    # shortest_path(graph, source, target)
 
     # Plot optimal trajectory.
+    # plt.figure()
+    # maze.plot()
+    # for vertex in graph.vertices:
+    #     if np.isclose(vertex.binary_variable.value, 1):
+    #         pass
+    #        # plt.plot(*vertex.variables[0].value.T, 'b--')
+    #     else:
+    #         print("binary is false! value is", vertex.binary_variable.value)
+    #         plt.plot(*vertex.variables[0].value.T, 'b--', alpha=vertex.binary_variable.value)
+    #         print("place?", *vertex.variables[0].value.T)
+    # plt.show()
+
     plt.figure()
     maze.plot()
     for vertex in graph.vertices:
-        if np.isclose(vertex.binary_variable.value, 1):
+        z = vertex.binary_variable.value
+        if z > 1e-3:
+            pt = vertex.variables[0].value[0]
+            plt.scatter(pt[0], pt[1], c=[[z]], cmap='hot_r', vmin=0, vmax=1,
+                        s=30, edgecolors='none', zorder=3)
             plt.plot(*vertex.variables[0].value.T, 'b--')
-    plt.show()
+
+    plt.colorbar(plt.cm.ScalarMappable(norm=plt.Normalize(0,1), cmap=plt.cm.hot_r),
+                ax=plt.gca(), label='Relaxed binary value')
+    plt.savefig("gap_relaxed")
+
+    graph.solve_shortest_path(source, target, binary=True)
+    print("Problem status:", graph.status)
+    print("Optimal value:", graph.value)
+
+    plt.figure()
+    maze.plot()
+    for vertex in graph.vertices:
+        z = vertex.binary_variable.value
+        if z > 1e-3:
+            pt = vertex.variables[0].value[0]
+            plt.scatter(pt[0], pt[1], c=[[z]], cmap='hot_r', vmin=0, vmax=1,
+                        s=30, edgecolors='none', zorder=3)
+            plt.plot(*vertex.variables[0].value.T, 'b--')
+
+    plt.colorbar(plt.cm.ScalarMappable(norm=plt.Normalize(0,1), cmap=plt.cm.hot_r),
+                ax=plt.gca(), label='Relaxed binary value')
+    plt.savefig("gap_binary")
+
+    from gcsopt.branch_bound import shortest_path
+    shortest_path(graph, source, target)
