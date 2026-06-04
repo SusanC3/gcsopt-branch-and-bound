@@ -6,10 +6,14 @@ from gcsopt import GraphOfConvexSets
 
 from gcsopt.branch_bound import shortest_path
 
+# feasible large gap: 15, 20, 50,
+# feasible small gap: 0
+# lots of edges: 25
+
 # https://github.com/TobiaMarcucci/olrc-code/blob/main/examples/chapter5/footstep_planning.ipynb
 # Generate random non-overlapping rectangles in the plane.
-np.random.seed(0) # fixed seed for random number generator
-m = 30 # number of rectangles
+np.random.seed(25) # fixed seed for random number generator
+m = 15 # number of rectangles
 L = np.zeros((m, 2)) # lower left corners of rectangles
 U = np.zeros((m, 2)) # upper right corners of rectangles
 for i in range(m):
@@ -62,18 +66,27 @@ for i in range(m):
 
 # Add edges between connected rectangles.
 # OG problem doesn't have max step size, so in theory all rectangles connect to each other
+edge_cutoff = 0.4
+num_edges = 0
 for i in range(m):
     for j in range(m):
         if (i == j): continue # don't step twice in same rectangle
         v1 = graph.get_vertex(i)
         v2 = graph.get_vertex(j)
 
+        ci = (L[i] + U[i]) / 2
+        cj = (L[j] + U[j]) / 2
+        if np.linalg.norm(cj - ci) > edge_cutoff: continue
+
+        # Impose max step size to limit edges
+        # this doesn't really limit the step size in practice it just reduced the number of edges
         e = graph.add_edge(v1, v2)
+        num_edges += 1
 
         # Cost is squared distance between r1 and r2
         e.add_cost(cp.sum_squares(v2.variables[0] - v1.variables[0]))
         
-
+print("edges:", num_edges)
 # Select source and target vertices.
 source = graph.get_vertex(i0)
 target = graph.get_vertex(iK)
@@ -83,16 +96,18 @@ target = graph.get_vertex(iK)
 if __name__ == "__main__":
 
     # Solve problem.
-    graph.solve_shortest_path(source, target, binary=False)
+    # graph.solve_shortest_path(source, target, binary=False)
+    # print("Problem status:", graph.status)
+    # print("Optimal value:", graph.value)
+
+    # graph.solve_shortest_path(source, target, binary=True)
+    # print("Problem status:", graph.status)
+    # print("Optimal value:", graph.value)
+
+    from gcsopt.branch_bound import shortest_path
+    shortest_path(graph, source, target)
     print("Problem status:", graph.status)
     print("Optimal value:", graph.value)
-
-    graph.solve_shortest_path(source, target, binary=True)
-    print("Problem status:", graph.status)
-    print("Optimal value:", graph.value)
-
-    # from gcsopt.branch_bound import shortest_path
-    # shortest_path(graph, source, target)
 
     # Plot solution.
     
