@@ -7,123 +7,157 @@ from gcsopt import GraphOfConvexSets
 from gcsopt.branch_bound import shortest_path
 
 # Create maze.
-maze_side = 7
-knock_downs = 10
-random_seed = 1
-# maze = Maze(maze_side, maze_side, random_seed)
-# maze.knock_down_walls(knock_downs)
-maze = make_gap_maze(maze_side, maze_side) 
+maze_side = 10
+knock_downs = 2
 
-# Start and goal points.
-start = np.array([0.5, 0])
-goal = np.array([maze_side - 0.5, maze_side])
+for random_seed in range(0, 5):
+    maze = Maze(maze_side, maze_side, random_seed)
+    maze.knock_down_walls(knock_downs)
 
-# Initialize graph.
-graph = GraphOfConvexSets()
+    # Start and goal points.
+    start = np.array([0.5, 0])
+    goal = np.array([maze_side - 0.5, maze_side])
 
-# Add vertices.
-for i in range(maze_side):
-    for j in range(maze_side):
-        vertex = graph.add_vertex((i, j))
+    # Initialize graph.
+    graph = GraphOfConvexSets()
 
-        # Trajectory start and end point within cell.
-        x = vertex.add_variable((2, 2))
+    # Add vertices.
+    for i in range(maze_side):
+        for j in range(maze_side):
+            vertex = graph.add_vertex((i, j))
 
-        # Minimize distance traveled within cell.
-        vertex.add_cost(cp.norm2(x[1] - x[0]))
+            # Trajectory start and end point within cell.
+            x = vertex.add_variable((2, 2))
 
-        # Constrain trajectory segment in cell.
-        l = np.array([i, j])
-        u = l + 1
-        vertex.add_constraints([x[0] >= l, x[0] <= u])
-        vertex.add_constraints([x[1] >= l, x[1] <= u])
+            # Minimize distance traveled within cell.
+            vertex.add_cost(cp.norm2(x[1] - x[0]))
 
-        # Fix start and goal points.
-        if all(l == 0):
-            vertex.add_constraint(x[0] == start)
-        elif all(u == maze_side):
-            vertex.add_constraint(x[1] == goal)
+            # Constrain trajectory segment in cell.
+            l = np.array([i, j])
+            u = l + 1
+            vertex.add_constraints([x[0] >= l, x[0] <= u])
+            vertex.add_constraints([x[1] >= l, x[1] <= u])
 
-# Add edges between communicating cells.
-for i in range(maze_side):
-    for j in range(maze_side):
-        cell = maze.get_cell(i, j)
-        tail = graph.get_vertex((i, j))
-        for direction, d in maze.directions.items():
-            if not cell.walls[direction]:
-                head = graph.get_vertex((i + d[0], j + d[1]))
-                edge = graph.add_edge(tail, head)
+            # Fix start and goal points.
+            if all(l == 0):
+                vertex.add_constraint(x[0] == start)
+            elif all(u == maze_side):
+                vertex.add_constraint(x[1] == goal)
 
-                # Enforce trajectory continuity.
-                end_tail = tail.variables[0][1]
-                start_head = head.variables[0][0]
-                edge.add_constraint(end_tail == start_head) 
+    # Add edges between communicating cells.
+    for i in range(maze_side):
+        for j in range(maze_side):
+            cell = maze.get_cell(i, j)
+            tail = graph.get_vertex((i, j))
+            for direction, d in maze.directions.items():
+                if not cell.walls[direction]:
+                    head = graph.get_vertex((i + d[0], j + d[1]))
+                    edge = graph.add_edge(tail, head)
 
-# Select source and target vertices.
-source = graph.get_vertex((0, 0))
-target = graph.get_vertex((maze_side - 1, maze_side - 1))
+                    # Enforce trajectory continuity.
+                    end_tail = tail.variables[0][1]
+                    start_head = head.variables[0][0]
+                    edge.add_constraint(end_tail == start_head) 
 
-# Run followin code only if this file is executed directly, and not when it is
-# imported by other files.
-if __name__ == "__main__":
+    # Select source and target vertices.
+    source = graph.get_vertex((0, 0))
+    target = graph.get_vertex((maze_side - 1, maze_side - 1))
 
-    plt.figure()
-    maze.plot()
-    plt.show()
+    # Run followin code only if this file is executed directly, and not when it is
+    # imported by other files.
+    if __name__ == "__main__":
+        print("Seed:", random_seed)
 
-    # Solve problem.
-    graph.solve_shortest_path(source, target, binary=False)
-    print("Problem status:", graph.status)
-    print("Optimal value:", graph.value)
+        # Solve problem.
+        graph.solve_shortest_path(source, target, binary=False)
+        print("Problem status:", graph.status)
+        print("Optimal value:", graph.value)
+
+        v_ints, e_ints = 0, 0
+        for v in graph.vertices:
+            if np.isclose(v.binary_variable.value, np.rint(v.binary_variable.value), atol=0.1): v_ints+=1
+        for e in graph.edges:
+            if np.isclose(e.binary_variable.value, np.rint(e.binary_variable.value), atol=0.1): e_ints+=1
+
+        print("vertex percentage:", v_ints / len(graph.vertices) * 100)
+        print("edge percentage:", e_ints / len(graph.edges) * 100)
+
+      
+
+        # plt.hist([v.binary_variable.value for v in graph.vertices], bins=100, edgecolor='black')
+        # plt.xlabel('Values')
+        # plt.ylabel('Frequency')
+        # plt.title('Vertex variable values')
+        # plt.show()
+
+        # plt.clf()
+        # plt.hist([e.binary_variable.value for e in graph.edges], bins=100, range=(-0.1, 1), edgecolor='black')
+        # plt.xlabel('Values')
+        # plt.ylabel('Frequency')
+        # plt.title('Edge variable values')
+        # plt.show()
+
+        # graph.solve_shortest_path(source, target, binary=True)
+        # print("Problem status:", graph.status)
+        # print("Optimal value:", graph.value)
+
+        print()
+
+        # from gcsopt.branch_bound import shortest_path
+        # shortest_path(graph, source, target, random_seed)
+        # print("Problem status:", graph.status)
+        # print("Optimal value:", graph.value)
 
 
-    # from gcsopt.branch_bound import shortest_path
-    # shortest_path(graph, source, target)
+        # plt.figure()
+        # maze.plot()
+        # for vertex in graph.vertices:
+        #     if np.isclose(vertex.binary_variable.value, 1):
+        #         plt.plot(*vertex.variables[0].value.T, 'b--')
+        # plt.show()
 
-    # Plot optimal trajectory.
-    # plt.figure()
-    # maze.plot()
-    # for vertex in graph.vertices:
-    #     if np.isclose(vertex.binary_variable.value, 1):
-    #         pass
-    #        # plt.plot(*vertex.variables[0].value.T, 'b--')
-    #     else:
-    #         print("binary is false! value is", vertex.binary_variable.value)
-    #         plt.plot(*vertex.variables[0].value.T, 'b--', alpha=vertex.binary_variable.value)
-    #         print("place?", *vertex.variables[0].value.T)
-    # plt.show()
 
-    plt.figure()
-    maze.plot()
-    for vertex in graph.vertices:
-        z = vertex.binary_variable.value
-        if z > 1e-3:
-            pt = vertex.variables[0].value[0]
-            plt.scatter(pt[0], pt[1], c=[[z]], cmap='hot_r', vmin=0, vmax=1,
-                        s=30, edgecolors='none', zorder=3)
-            plt.plot(*vertex.variables[0].value.T, 'b--')
+        # Plot optimal trajectory.
+        # plt.figure()
+        # maze.plot()
+        # for vertex in graph.vertices:
+        #     if np.isclose(vertex.binary_variable.value, 1):
+        #         pass
+        #        # plt.plot(*vertex.variables[0].value.T, 'b--')
+        #     else:
+        #         print("binary is false! value is", vertex.binary_variable.value)
+        #         plt.plot(*vertex.variables[0].value.T, 'b--', alpha=vertex.binary_variable.value)
+        #         print("place?", *vertex.variables[0].value.T)
+        # plt.show()
 
-    plt.colorbar(plt.cm.ScalarMappable(norm=plt.Normalize(0,1), cmap=plt.cm.hot_r),
-                ax=plt.gca(), label='Relaxed binary value')
-    plt.savefig("gap_relaxed")
+        # plt.figure()
+        # maze.plot()
+        # for vertex in graph.vertices:
+        #     z = vertex.binary_variable.value
+        #     if z > 1e-3:
+        #         pt = vertex.variables[0].value[0]
+        #         plt.scatter(pt[0], pt[1], c=[[z]], cmap='hot_r', vmin=0, vmax=1,
+        #                     s=30, edgecolors='none', zorder=3)
+        #         plt.plot(*vertex.variables[0].value.T, 'b--')
 
-    graph.solve_shortest_path(source, target, binary=True)
-    print("Problem status:", graph.status)
-    print("Optimal value:", graph.value)
+        # plt.colorbar(plt.cm.ScalarMappable(norm=plt.Normalize(0,1), cmap=plt.cm.hot_r),
+        #             ax=plt.gca(), label='Relaxed binary value')
+        # plt.savefig("gap_relaxed")
 
-    plt.figure()
-    maze.plot()
-    for vertex in graph.vertices:
-        z = vertex.binary_variable.value
-        if z > 1e-3:
-            pt = vertex.variables[0].value[0]
-            plt.scatter(pt[0], pt[1], c=[[z]], cmap='hot_r', vmin=0, vmax=1,
-                        s=30, edgecolors='none', zorder=3)
-            plt.plot(*vertex.variables[0].value.T, 'b--')
+        # graph.solve_shortest_path(source, target, binary=True)
+        # print("Problem status:", graph.status)
+        # print("Optimal value:", graph.value)
 
-    plt.colorbar(plt.cm.ScalarMappable(norm=plt.Normalize(0,1), cmap=plt.cm.hot_r),
-                ax=plt.gca(), label='Relaxed binary value')
-    plt.savefig("gap_binary")
+        # plt.figure()
+        # maze.plot()
+        # for vertex in graph.vertices:
+        #     z = vertex.binary_variable.value
+        #     if z > 1e-3:
+        #         pt = vertex.variables[0].value[0]
+        #         plt.scatter(pt[0], pt[1], c=[[z]], cmap='hot_r', vmin=0, vmax=1,
+        #                     s=30, edgecolors='none', zorder=3)
+        #         plt.plot(*vertex.variables[0].value.T, 'b--')
 
-    from gcsopt.branch_bound import shortest_path
-    shortest_path(graph, source, target)
+        # plt.colorbar(plt.cm.ScalarMappable(norm=plt.Normalize(0,1), cmap=plt.cm.hot_r),
+        #             ax=plt.gca(), label='Relaxed binary value')
+        # plt.savefig("gap_binary")
