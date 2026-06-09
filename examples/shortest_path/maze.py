@@ -10,7 +10,7 @@ from gcsopt.branch_bound import shortest_path
 maze_side = 10
 knock_downs = 2
 
-for random_seed in range(0, 5):
+for random_seed in range(4, 5):
     maze = Maze(maze_side, maze_side, random_seed)
     maze.knock_down_walls(knock_downs)
 
@@ -73,40 +73,58 @@ for random_seed in range(0, 5):
         print("Problem status:", graph.status)
         print("Optimal value:", graph.value)
 
-        v_ints, e_ints = 0, 0
-        for v in graph.vertices:
-            if np.isclose(v.binary_variable.value, np.rint(v.binary_variable.value), atol=0.1): v_ints+=1
-        for e in graph.edges:
-            if np.isclose(e.binary_variable.value, np.rint(e.binary_variable.value), atol=0.1): e_ints+=1
+        # v_ints, e_ints = 0, 0
+        # for v in graph.vertices:
+        #     if np.isclose(v.binary_variable.value, np.rint(v.binary_variable.value), atol=0.1): v_ints+=1
+        # for e in graph.edges:
+        #     if np.isclose(e.binary_variable.value, np.rint(e.binary_variable.value), atol=0.1): e_ints+=1
 
-        print("vertex percentage:", v_ints / len(graph.vertices) * 100)
-        print("edge percentage:", e_ints / len(graph.edges) * 100)
+        # print("vertex percentage:", v_ints / len(graph.vertices) * 100)
+        # print("edge percentage:", e_ints / len(graph.edges) * 100)
 
-      
+        # plt.figure()
+        # maze.plot()
+        # for edge in graph.edges:
+        #     head, tail = edge.head, edge.tail
 
-        # plt.hist([v.binary_variable.value for v in graph.vertices], bins=100, edgecolor='black')
-        # plt.xlabel('Values')
-        # plt.ylabel('Frequency')
-        # plt.title('Vertex variable values')
+        #     zh = head.binary_variable.value
+        #     if zh > 1e-3:
+        #         pt = head.variables[0].value[0]
+        #         plt.scatter(pt[0], pt[1], c=[[zh]], cmap='hot_r', vmin=0, vmax=1,
+        #                     s=30, edgecolors='none', zorder=3)
+        #         plt.plot(*vertex.variables[0].value.T, 'b-', c='blue')
+
+        #     zt = tail.binary_variable.value
+        #     if zt > 1e-3:
+        #         pt = head.variables[0].value[0]
+        #         plt.scatter(pt[0], pt[1], c=[[zt]], cmap='hot_r', vmin=0, vmax=1,
+        #                     s=30, edgecolors='none', zorder=3)
+                
+        #     e = edge.binary_variable.value
+        #     cmap = plt.colormaps['hot_r']
+        #     if e > 1e-3: 
+        #         head_pt = head.variables[0].value[0]
+        #         tail_pt = tail.variables[0].value[0]
+        #         plt.plot([head_pt[0], tail_pt[0]], [head_pt[1], tail_pt[1]], 'b--', c=cmap(e))
+
+    
+
+        # plt.colorbar(plt.cm.ScalarMappable(norm=plt.Normalize(0,1), cmap=plt.cm.hot_r),
+        #             ax=plt.gca(), label='Relaxed binary value')
         # plt.show()
-
         # plt.clf()
-        # plt.hist([e.binary_variable.value for e in graph.edges], bins=100, range=(-0.1, 1), edgecolor='black')
-        # plt.xlabel('Values')
-        # plt.ylabel('Frequency')
-        # plt.title('Edge variable values')
-        # plt.show()
 
-        # graph.solve_shortest_path(source, target, binary=True)
-        # print("Problem status:", graph.status)
-        # print("Optimal value:", graph.value)
+
+        graph.solve_shortest_path(source, target, binary=True)
+        print("Problem status:", graph.status)
+        print("Optimal value:", graph.value)
 
         print()
 
-        # from gcsopt.branch_bound import shortest_path
-        # shortest_path(graph, source, target, random_seed)
-        # print("Problem status:", graph.status)
-        # print("Optimal value:", graph.value)
+        from gcsopt.branch_bound import shortest_path
+        shortest_path(graph, source, target, random_seed)
+        print("Problem status:", graph.status)
+        print("Optimal value:", graph.value)
 
 
         # plt.figure()
@@ -117,47 +135,3 @@ for random_seed in range(0, 5):
         # plt.show()
 
 
-        # Plot optimal trajectory.
-        # plt.figure()
-        # maze.plot()
-        # for vertex in graph.vertices:
-        #     if np.isclose(vertex.binary_variable.value, 1):
-        #         pass
-        #        # plt.plot(*vertex.variables[0].value.T, 'b--')
-        #     else:
-        #         print("binary is false! value is", vertex.binary_variable.value)
-        #         plt.plot(*vertex.variables[0].value.T, 'b--', alpha=vertex.binary_variable.value)
-        #         print("place?", *vertex.variables[0].value.T)
-        # plt.show()
-
-        # plt.figure()
-        # maze.plot()
-        # for vertex in graph.vertices:
-        #     z = vertex.binary_variable.value
-        #     if z > 1e-3:
-        #         pt = vertex.variables[0].value[0]
-        #         plt.scatter(pt[0], pt[1], c=[[z]], cmap='hot_r', vmin=0, vmax=1,
-        #                     s=30, edgecolors='none', zorder=3)
-        #         plt.plot(*vertex.variables[0].value.T, 'b--')
-
-        # plt.colorbar(plt.cm.ScalarMappable(norm=plt.Normalize(0,1), cmap=plt.cm.hot_r),
-        #             ax=plt.gca(), label='Relaxed binary value')
-        # plt.savefig("gap_relaxed")
-
-        # graph.solve_shortest_path(source, target, binary=True)
-        # print("Problem status:", graph.status)
-        # print("Optimal value:", graph.value)
-
-        # plt.figure()
-        # maze.plot()
-        # for vertex in graph.vertices:
-        #     z = vertex.binary_variable.value
-        #     if z > 1e-3:
-        #         pt = vertex.variables[0].value[0]
-        #         plt.scatter(pt[0], pt[1], c=[[z]], cmap='hot_r', vmin=0, vmax=1,
-        #                     s=30, edgecolors='none', zorder=3)
-        #         plt.plot(*vertex.variables[0].value.T, 'b--')
-
-        # plt.colorbar(plt.cm.ScalarMappable(norm=plt.Normalize(0,1), cmap=plt.cm.hot_r),
-        #             ax=plt.gca(), label='Relaxed binary value')
-        # plt.savefig("gap_binary")

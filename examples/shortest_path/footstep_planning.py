@@ -49,8 +49,10 @@ for s in range(14, 15):
     graph = GraphOfConvexSets()
 
     # Add vertices.
+    vertex_centers = []
     for i in range(m):
         vertex = graph.add_vertex(i)
+        vertex_centers.append((L[i] + U[i]) / 2)
 
         # footstep location (x, y)
         r = vertex.add_variable(2)
@@ -106,25 +108,25 @@ for s in range(14, 15):
         print("Problem status:", graph.status)
         print("Optimal value:", graph.value)
 
-        v_ints, e_ints = 0, 0
-        for v in graph.vertices:
-            if np.isclose(v.binary_variable.value, np.rint(v.binary_variable.value), atol=0.1): v_ints+=1
-        for e in graph.edges:
-            if np.isclose(e.binary_variable.value, np.rint(e.binary_variable.value), atol=0.1): e_ints+=1
+        # v_ints, e_ints = 0, 0
+        # for v in graph.vertices:
+        #     if np.isclose(v.binary_variable.value, np.rint(v.binary_variable.value), atol=0.1): v_ints+=1
+        # for e in graph.edges:
+        #     if np.isclose(e.binary_variable.value, np.rint(e.binary_variable.value), atol=0.1): e_ints+=1
 
-        print("vertex percentage:", v_ints / len(graph.vertices) * 100)
-        print("edge percentage:", e_ints / len(graph.edges) * 100)
+        # print("vertex percentage:", v_ints / len(graph.vertices) * 100)
+        # print("edge percentage:", e_ints / len(graph.edges) * 100)
 
-        print()
+        # print()
 
         # graph.solve_shortest_path(source, target, binary=True)
         # print("Problem status:", graph.status)
         # print("Optimal value:", graph.value)
 
-        # from gcsopt.branch_bound import shortest_path
-        # shortest_path(graph, source, target, s)
-        # print("Problem status:", graph.status)
-        # print("Optimal value:", graph.value)
+        from gcsopt.branch_bound import shortest_path
+        shortest_path(graph, source, target, s, (vertex_centers, xK))
+        print("Problem status:", graph.status)
+        print("Optimal value:", graph.value)
 
         # Plot solution.
         

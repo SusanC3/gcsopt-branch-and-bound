@@ -43,13 +43,14 @@ def makedot(root, optval):
 
 
 class Node:
-    def __init__(self, val=None, yv=[], ye=[], yv_fixed={}, ye_fixed={}, infeasible=False):
+    def __init__(self, val=None, yv=[], ye=[], yv_fixed={}, ye_fixed={}, infeasible=False, depth=-1):
         self.value = val
         self.yv = copy.deepcopy(yv)
         self.yv_fixed = copy.deepcopy(yv_fixed)
         self.ye = copy.deepcopy(ye)
         self.ye_fixed = copy.deepcopy(ye_fixed)
         self.infeasible = infeasible
+        self.depth = depth
 
         self.children = []
 
@@ -72,7 +73,7 @@ class Node:
 
 # Utils
 def make_child(n):
-    return Node(val=n.value, yv_fixed=copy.deepcopy(n.yv_fixed), ye_fixed=copy.deepcopy(n.ye_fixed))
+    return Node(val=n.value, yv_fixed=copy.deepcopy(n.yv_fixed), ye_fixed=copy.deepcopy(n.ye_fixed), depth=n.depth+1)
 
 def solve_relaxation(n, conic_graph, conic_source, conic_target):
     bb_node_shortest_path(conic_graph, conic_source, conic_target, n.yv_fixed, n.ye_fixed)
@@ -104,12 +105,57 @@ def p_est(n, conic_graph, conic_source, conic_target): # priority is estimated b
     solve_relaxation(temp, conic_graph, conic_source, conic_target) # replace with pseudocost for efficiency# replace with pseudocost for efficiency
     return temp.value
 
-def p_Astar(n, conic_graph, conic_source, conic_target): # use A* cost
-    solve_relaxation(n, conic_graph, conic_source, conic_target)
-    h = n.value # "current" path cost
-    # need ADMISSIBLE H
+def p_depth(n, conic_graph, conic_source, conic_target):
+    print("depth is", n.depth, "UB is", n.upper_bound)
+    if n.upper_bound > 100000 or n.upper_bound == -1: 
+        print("p is depth function", (1 / n.depth) * 100)
+        return (1 / n.depth) * 100 # no solution has been found yet
+    else: 
+        p = p_est(n, conic_graph, conic_source, conic_target) # start preferring good nodes
+        print("returning p_est", p)
+        return p
 
-    return g + h
+def p_astar(n, conic_graph, conic_source, conic_target, vertex_centers = None, xK=None): # estimate distance to goal
+    solve_relaxation(n, conic_graph, conic_source, conic_target)
+
+    # try to identify if there is some path already formed. how far is the "end" of that path from the goal?
+    successors = {}
+    bestvals = {}
+    for i, e in enumerate(conic_graph.edges):
+        if n.ye[i].value > 0.8: #probably there is an edge here
+            if e.tail.name not in successors: 
+                successors[e.tail.name] = e.head.name
+                bestvals[e.tail.name] = n.ye[i].value
+            elif n.ye[i].value > bestvals[e.tail.name]: # this edge is more likely
+                successors[e.tail.name] = e.head.name
+                bestvals[e.tail.name] = n.ye[i].value
+    t = conic_source.name
+    visited = {}
+    depth = 0
+    while t in successors:
+        nxt = successors[t]
+        if nxt is None or nxt in visited: break
+        t = nxt
+        visited[t] = 1
+        depth += 1
+
+    #maze: goal is at 10/5, 10/5, 
+    # goal = np.array([10/5, 10/5])
+    # pose = np.array([t[0]/5, t[1]/5])
+    # dist = np.linalg.norm(goal - pose)
+
+    # import pdb
+    # pdb.set_trace()
+
+    #footstep:
+    dist = np.linalg.norm(np.array(xK) -  np.array(vertex_centers[t]))
+
+    # import pdb
+    # pdb.set_trace()
+
+ #   print("depth:", depth, "dist to goal:", dist, "n.value:", n.value)
+    return n.value + dist
+
 
 '''
 Different branching options
@@ -139,20 +185,19 @@ def b_value(n, value, num_children=2, **kwargs):
     if best_v < best_e:
         children[0].branch_info = "yv[" + str(iv) + "]: " + str(n.yv[iv].value)[:7] + " --> 0"
         children[1].branch_info = "yv[" + str(iv) + "]: " + str(n.yv[iv].value)[:7] + " --> 1"
-        print("best vertex", iv, "is this close to:", value, best_v)
+       # print("best vertex", iv, "is this close to:", value, best_v)
 
         children[0].yv_fixed[iv] = 0
         children[1].yv_fixed[iv] = 1
     else:
         children[0].branch_info = "ye[" + str(ie) + "]: " + str(n.ye[ie].value)[:7] + " --> 0"
         children[1].branch_info = "ye[" + str(ie) + "]: " + str(n.ye[ie].value)[:7] + " --> 1"
-        print("best edge", ie, "is this close to:", value, best_e)
+      #  print("best edge", ie, "is this close to:", value, best_e)
         
         children[0].ye_fixed[ie] = 0
         children[1].ye_fixed[ie] = 1
     
     return children
-
 
 # branch on variables closest to integer
 def b_int(n, num_children=2, **kwargs):
@@ -216,7 +261,7 @@ def b_length(n, edge_lengths):
     children[0].branch_info = "ye[" + str(ie) + "] (score " + str(best_score)[:7] + "): " + str(n.ye[ie].value)[:7]  + " --> 0"
     children[1].ye_fixed[ie] = 1
     children[1].branch_info = "ye[" + str(ie) + "] (score " + str(best_score)[:7] + "): " + str(n.ye[ie].value)[:7]  + " --> 1"
-    print("best edge", ie, "has length", best_score, "unfixed value was", n.ye[ie].value)  
+  #  print("best edge", ie, "has length", best_score, "unfixed value was", n.ye[ie].value)  
 
     return children
 
@@ -270,14 +315,14 @@ def b_strong(n, conic_graph, conic_source, conic_target):
     if best_v > best_e:
         children[0].branch_info = "yv[" + str(iv) + "]: " + str(n.yv[iv].value)[:7] + " --> 0"
         children[1].branch_info = "yv[" + str(iv) + "]: " + str(n.yv[iv].value)[:7] + " --> 1"
-        print("best vertex", iv, "has this product:", best_v)
+      #  print("best vertex", iv, "has this product:", best_v)
 
         children[0].yv_fixed[iv] = 0
         children[1].yv_fixed[iv] = 1
     else:
         children[0].branch_info = "ye[" + str(ie) + "]: " + str(n.ye[ie].value)[:7] + " --> 0"
         children[1].branch_info = "ye[" + str(ie) + "]: " + str(n.ye[ie].value)[:7] + " --> 1"
-        print("best edge", ie, "has this product:", best_e)
+     #   print("best edge", ie, "has this product:", best_e)
         
         children[0].ye_fixed[ie] = 0
         children[1].ye_fixed[ie] = 1
@@ -285,8 +330,8 @@ def b_strong(n, conic_graph, conic_source, conic_target):
     return children
 
 
-calc_priority = p_obj
-branch_children = b_int
+calc_priority = p_astar
+branch_children = b_value
 
 
 def shortest_path_conic(conic_graph, conic_source, conic_target, seed, heuristic_info, tol=1e-4):
@@ -309,16 +354,16 @@ def shortest_path_conic(conic_graph, conic_source, conic_target, seed, heuristic
             yv=[v.binary_variable for v in conic_graph.vertices], 
             ye=[e.binary_variable for e in conic_graph.edges],
             infeasible=conic_graph.status == cp.INFEASIBLE)
+    root.depth = 1
 
-
-    heapq.heappush(leaf_nodes, (calc_priority(root, conic_graph, conic_source, conic_target), root))
+    heapq.heappush(leaf_nodes, (calc_priority(root, conic_graph, conic_source, conic_target, heuristic_info[0], heuristic_info[1]), root))
 
     #1. termination check
     iter = 0
     while (iter < 200 and len(leaf_nodes) > 0):
         iter+=1
-        #print("upper_bound =", upper_bound)
-        #print("queue length:", len(leaf_nodes))
+      #  print("upper_bound =", upper_bound)
+      #  print("queue length:", len(leaf_nodes))
 
         #2. Choose next node, pop it from leaf_nodes
         priority, n = heapq.heappop(leaf_nodes)
@@ -327,7 +372,7 @@ def shortest_path_conic(conic_graph, conic_source, conic_target, seed, heuristic
         n.priority = priority
        # print("priority:", priority)
 
-     #   print(f"Node has {len(n.yv_fixed)} fixed vertices, {len(n.ye_fixed)} fixed edges")
+       # print(f"Node has {len(n.yv_fixed)} fixed vertices, {len(n.ye_fixed)} fixed edges")
       #  print(f"Fixed edges: {n.ye_fixed}")
 
         #3. solve the LP at this node, conditioned on fixed variables. 
@@ -341,31 +386,31 @@ def shortest_path_conic(conic_graph, conic_source, conic_target, seed, heuristic
         #4. Prune (GOTO Step 1) IF:
             # LP is infeasible
         if (n.infeasible): 
-        #    print("infeasible, continuing")
+         #   print("infeasible, continuing")
             n.prune_reason = "infeasible"
             continue
             # upper bound <= objective val
         if (upper_bound <= n.value):
-         #   print("node's value worse than upper bound, continuing")
+        #    print("node's value worse than upper bound, continuing")
             n.prune_reason = ">= UB"
             continue
             # if all vars are integers and val <= upper bound, update & prune Nodes whose val >= UB
         if (np.allclose(np.array(yv_values), np.rint(np.array(yv_values)), atol=tol) 
                 and np.allclose(np.array(ye_values), np.rint(np.array(ye_values)), atol=tol)):
-          #  print("all vars are integers, continuing")
+        #   print("all vars are integers, continuing")
             n.prune_reason = "int"
             upper_bound = n.value
             upper_bound_node = n
             leaf_nodes = [leaf for leaf in leaf_nodes if not (leaf[1].value is not None and leaf[1].value >= upper_bound)]
-          #  print("len leaf nodes after prune:", len(leaf_nodes))
+           # print("len leaf nodes after prune:", len(leaf_nodes))
             n.upper_bound = upper_bound
             continue
         
 
         #6. Branch. decrease feasible region by fixing >=1 addtl. variables, add >=1 new nodes
-        n.children = branch_children(n)#, conic_graph, conic_source, conic_target)
+        n.children = branch_children(n, 0.5)#, conic_graph, conic_source, conic_target)
         for child in n.children:
-            heapq.heappush(leaf_nodes, (calc_priority(child, conic_graph, conic_source, conic_target), child))
+            heapq.heappush(leaf_nodes, (calc_priority(child, conic_graph, conic_source, conic_target, heuristic_info[0], heuristic_info[1]), child))
 
       #  print()
     
@@ -374,7 +419,7 @@ def shortest_path_conic(conic_graph, conic_source, conic_target, seed, heuristic
         solve_relaxation(upper_bound_node, conic_graph, conic_source, conic_target)
         print("took", iter, "iters")
     else: print("didn't converge")
-    if DEBUG: makedot(root, conic_graph.value).render('footstep_obj_int_' + str(seed))
+    if DEBUG: makedot(root, conic_graph.value).render('footstep_astar_' + str(seed))
 
 
 def shortest_path(graph, source, target, seed, heuristic_info={}):
